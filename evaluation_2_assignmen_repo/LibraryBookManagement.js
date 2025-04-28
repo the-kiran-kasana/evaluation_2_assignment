@@ -55,12 +55,14 @@ let library = [
 
 
   if(genre1>genre2){
-    console.log('Most popular genre: "' + bookname1 + '"(' + countbook1 + 'books) ')
+    console.log('Most popular genre: "' + bookname1 + '"(' + countbook1 + ' books) ')
   }
   else{
     console.log("Most popular genre: " + bookname2 + + " (" + countbook2 + " books)")
   }
 
+  console.log("Average publication year:" + Math.floor(avg))
+
 console.log('Books with low availability: [' + list + ']')
 
-console.log("Average publication year: " + Math.round(avg))
+
