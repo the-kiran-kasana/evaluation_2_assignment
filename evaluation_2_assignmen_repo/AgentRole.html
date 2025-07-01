@@ -1,53 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Agent Feedback Form</title>
+  <title>Real-Time Sales Feedback & Agent Performance Monitor</title>
   <style>
     body { font-family: Arial; padding: 20px; }
-    input, select, textarea, button { display: block; margin: 10px 0; padding: 8px; width: 100%; }
+    .hidden { display: none; }
+    .green { background: #d4edda; }
+    .yellow { background: #fff3cd; }
+    .red { background: #f8d7da; }
+    input, select, textarea, button { margin: 5px 0; padding: 8px; width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
     .banner { background: #ffc107; color: #000; padding: 10px; display: none; margin-bottom: 10px; }
   </style>
 </head>
 <body>
 
-<h2>Feedback Form (Agent)</h2>
-<div class="banner" id="offlineBanner">⚠️ You are offline. Feedback saved locally.</div>
+<h2>Real-Time Sales Feedback & Agent Performance Monitor</h2>
 
-<input id="agent" placeholder="Agent Name" />
-<input id="company" placeholder="Client Company" />
+<div id="roleSelect">
+  <p>Select your role:</p>
+  <button onclick="setRole('agent')">Agent</button>
+  <button onclick="setRole('lead')">Lead</button>
+</div>
 
-<select id="department">
-  <option value="">Select Department</option>
-  <option value="SaaS">SaaS</option>
-  <option value="Hardware">Hardware</option>
-  <option value="Consulting">Consulting</option>
-  <option value="Other">Other</option>
-</select>
+<!-- Agent Feedback Form -->
+<div id="agentPanel" class="hidden">
+  <div class="banner" id="offlineBanner">You are offline. Feedback saved locally.</div>
+  <h3>Feedback Form (Agent)</h3>
+  <input id="agent" placeholder="Agent Name" />
+  <input id="company" placeholder="Client Company" />
+  <select id="department">
+    <option value="">Select Department</option>
+    <option value="SaaS">SaaS</option>
+    <option value="Hardware">Hardware</option>
+    <option value="Consulting">Consulting</option>
+    <option value="Other">Other</option>
+  </select>
+  <input id="score" type="number" placeholder="Satisfaction Score (1-5)" />
+  <input id="nps" type="number" placeholder="NPS (-100 to 100)" />
+  <textarea id="comment" placeholder="Comment (optional)"></textarea>
+  <button onclick="submitFeedback()">Submit</button>
+</div>
 
-<input id="score" type="number" placeholder="Satisfaction Score (1-5)" />
-<input id="nps" type="number" placeholder="NPS (-100 to 100)" />
-<textarea id="comment" placeholder="Comment (optional)"></textarea>
+<!-- Lead Dashboard -->
+<div id="leadPanel" class="hidden">
+  <h3>Feedback Analytics</h3>
+  <div>
+    <p>Total Feedbacks: <span id="total"></span></p>
+    <p>Average Score: <span id="avgScore"></span></p>
+    <p>Average NPS: <span id="avgNPS"></span></p>
+    <p>Department with Highest Avg Score: <span id="topDept"></span></p>
+    <p>Top Agent(s) by NPS: <span id="topAgents"></span></p>
+    <p>Agents with >3 Low Scores (<3): <span id="lowAgents"></span></p>
+  </div>
 
-<button onclick="submitFeedback()">Submit</button>
+  <input id="searchInput" placeholder="Search by Agent or Company" />
+  <select id="agentFilter"><option value="">All Agents</option></select>
+  <select id="deptFilter"><option value="">All Departments</option></select>
+  <button onclick="sortBy('score')">Sort by Score</button>
+  <button onclick="sortBy('nps')">Sort by NPS</button>
 
-<!-- Firebase SDK -->
+  <table>
+    <thead>
+    <tr>
+      <th>Agent</th><th>Company</th><th>Dept</th><th>Score</th><th>NPS</th><th>Comment</th>
+    </tr>
+    </thead>
+    <tbody id="feedbackTable"></tbody>
+  </table>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-
 <script>
-  // 🔧 Your Firebase config (Replace with your details)
   const firebaseConfig = {
     apiKey: "YOUR_API_KEY",
     authDomain: "YOUR_PROJECT.firebaseapp.com",
     databaseURL: "https://YOUR_PROJECT.firebaseio.com",
     projectId: "YOUR_PROJECT_ID"
   };
-
-  // ✅ Initialize Firebase
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // Submit feedback
+  let feedbackList = [];
+  let sortDirection = { score: 'asc', nps: 'asc' };
+
+  function setRole(role) {
+    localStorage.setItem('userRole', role);
+    showRoleUI(role);
+  }
+
+  function showRoleUI(role) {
+    document.getElementById('roleSelect').classList.add('hidden');
+    if (role === 'agent') document.getElementById('agentPanel').classList.remove('hidden');
+    else if (role === 'lead') {
+      document.getElementById('leadPanel').classList.remove('hidden');
+      loadData();
+    }
+  }
+
+  window.onload = () => {
+    const role = localStorage.getItem('userRole');
+    if (role) showRoleUI(role);
+  }
+
   function submitFeedback() {
     const agent = document.getElementById("agent").value;
     const company = document.getElementById("company").value;
@@ -55,42 +112,87 @@
     const score = parseInt(document.getElementById("score").value);
     const nps = parseInt(document.getElementById("nps").value);
     const comment = document.getElementById("comment").value;
-
-    // ✅ Validation
-    if (!agent || !company || isNaN(score)) {
-      alert("Please fill Agent, Company, and Score.");
-      return;
-    }
-    if (nps < -100 || nps > 100) {
-      alert("NPS must be between -100 and 100.");
-      return;
-    }
+    if (!agent || !company || isNaN(score)) return alert("Fill Agent, Company, Score");
+    if (nps < -100 || nps > 100) return alert("NPS must be -100 to 100");
 
     const feedback = { agent, company, department, score, nps, comment, time: Date.now() };
-
-    // ✅ Check if online
     if (navigator.onLine) {
-      db.ref("feedbacks").push(feedback, (error) => {
-        if (!error) {
-          alert("Feedback sent to Firebase!");
-        }
+      db.ref("feedbacks").push(feedback, err => {
+        if (!err) alert("Feedback submitted to Firebase!");
       });
     } else {
-      // ✅ Offline: Save to localStorage
-      let saved = JSON.parse(localStorage.getItem("offlineFeedbacks") || "[]");
-      saved.push(feedback);
-      localStorage.setItem("offlineFeedbacks", JSON.stringify(saved));
+      const local = JSON.parse(localStorage.getItem("offlineFeedbacks") || "[]");
+      local.push(feedback);
+      localStorage.setItem("offlineFeedbacks", JSON.stringify(local));
       document.getElementById("offlineBanner").style.display = "block";
     }
-
-    // Clear form
-    document.getElementById("agent").value = "";
-    document.getElementById("company").value = "";
-    document.getElementById("department").value = "";
-    document.getElementById("score").value = "";
-    document.getElementById("nps").value = "";
-    document.getElementById("comment").value = "";
+    ["agent", "company", "department", "score", "nps", "comment"].forEach(id => document.getElementById(id).value = "");
   }
+
+  function loadData() {
+    db.ref("feedbacks").once("value", snapshot => {
+      const data = snapshot.val();
+      feedbackList = Object.values(data || {});
+      renderTable(feedbackList);
+      populateFilters(feedbackList);
+    });
+  }
+
+  function renderTable(data) {
+    const tbody = document.getElementById("feedbackTable");
+    tbody.innerHTML = "";
+    const agentF = document.getElementById("agentFilter").value;
+    const deptF = document.getElementById("deptFilter").value;
+    const search = document.getElementById("searchInput").value.toLowerCase();
+    const filtered = data.filter(f => (!agentF || f.agent === agentF) && (!deptF || f.department === deptF) && (f.agent.toLowerCase().includes(search) || f.company.toLowerCase().includes(search)));
+
+    filtered.forEach(fb => {
+      const row = document.createElement("tr");
+      row.className = fb.score >= 4 ? "green" : fb.score >= 2 ? "yellow" : (fb.score < 2 || fb.nps <= 0) ? "red" : "";
+      row.innerHTML = `<td>${fb.agent}</td><td>${fb.company}</td><td>${fb.department}</td><td>${fb.score}</td><td>${fb.nps}</td><td>${fb.comment || ""}</td>`;
+      tbody.appendChild(row);
+    });
+    renderAnalytics(filtered);
+  }
+
+  function renderAnalytics(data) {
+    if (data.length === 0) return;
+    document.getElementById("total").textContent = data.length;
+    document.getElementById("avgScore").textContent = (data.map(d => d.score).reduce((a, b) => a + b, 0) / data.length).toFixed(2);
+    document.getElementById("avgNPS").textContent = (data.map(d => d.nps).reduce((a, b) => a + b, 0) / data.length).toFixed(2);
+
+    const deptAvg = Object.entries(data.reduce((acc, curr) => { acc[curr.department] = [...(acc[curr.department] || []), curr.score]; return acc; }, {})).map(([dept, scores]) => ({ dept, avg: scores.reduce((a, b) => a + b, 0) / scores.length }));
+    document.getElementById("topDept").textContent = deptAvg.sort((a, b) => b.avg - a.avg)[0]?.dept || "N/A";
+
+    const agentNps = Object.entries(data.reduce((acc, curr) => { acc[curr.agent] = [...(acc[curr.agent] || []), curr.nps]; return acc; }, {})).map(([agent, npsList]) => ({ agent, avgNps: npsList.reduce((a, b) => a + b, 0) / npsList.length }));
+    const maxNps = Math.max(...agentNps.map(a => a.avgNps));
+    document.getElementById("topAgents").textContent = agentNps.filter(a => a.avgNps === maxNps).map(a => a.agent).join(", ");
+
+    const lowScores = Object.entries(data.filter(d => d.score < 3).reduce((acc, cur) => { acc[cur.agent] = (acc[cur.agent] || 0) + 1; return acc; }, {})).filter(([_, count]) => count >= 3).map(([agent]) => agent).join(", ") || "None";
+    document.getElementById("lowAgents").textContent = lowScores;
+  }
+
+  function sortBy(field) {
+    const dir = sortDirection[field];
+    feedbackList.sort((a, b) => dir === 'asc' ? a[field] - b[field] : b[field] - a[field]);
+    sortDirection[field] = dir === 'asc' ? 'desc' : 'asc';
+    renderTable(feedbackList);
+  }
+
+  function populateFilters(data) {
+    const agents = [...new Set(data.map(f => f.agent))];
+    const depts = [...new Set(data.map(f => f.department))];
+    document.getElementById("agentFilter").innerHTML = `<option value="">All Agents</option>` + agents.map(a => `<option value="${a}">${a}</option>`).join("");
+    document.getElementById("deptFilter").innerHTML = `<option value="">All Departments</option>` + depts.map(d => `<option value="${d}">${d}</option>`).join("");
+  }
+
+  let debounceTimer;
+  document.getElementById("searchInput").addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => renderTable(feedbackList), 400);
+  });
+  document.getElementById("agentFilter").addEventListener("change", () => renderTable(feedbackList));
+  document.getElementById("deptFilter").addEventListener("change", () => renderTable(feedbackList));
 </script>
 
 </body>
