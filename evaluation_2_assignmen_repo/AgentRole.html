@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Agent Feedback Form</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    input, select, textarea, button { display: block; margin: 10px 0; padding: 8px; width: 100%; }
+    .banner { background: #ffc107; color: #000; padding: 10px; display: none; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<h2>Feedback Form (Agent)</h2>
+<div class="banner" id="offlineBanner">⚠️ You are offline. Feedback saved locally.</div>
+
+<input id="agent" placeholder="Agent Name" />
+<input id="company" placeholder="Client Company" />
+
+<select id="department">
+  <option value="">Select Department</option>
+  <option value="SaaS">SaaS</option>
+  <option value="Hardware">Hardware</option>
+  <option value="Consulting">Consulting</option>
+  <option value="Other">Other</option>
+</select>
+
+<input id="score" type="number" placeholder="Satisfaction Score (1-5)" />
+<input id="nps" type="number" placeholder="NPS (-100 to 100)" />
+<textarea id="comment" placeholder="Comment (optional)"></textarea>
+
+<button onclick="submitFeedback()">Submit</button>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<script>
+  // 🔧 Your Firebase config (Replace with your details)
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID"
+  };
+
+  // ✅ Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // Submit feedback
+  function submitFeedback() {
+    const agent = document.getElementById("agent").value;
+    const company = document.getElementById("company").value;
+    const department = document.getElementById("department").value;
+    const score = parseInt(document.getElementById("score").value);
+    const nps = parseInt(document.getElementById("nps").value);
+    const comment = document.getElementById("comment").value;
+
+    // ✅ Validation
+    if (!agent || !company || isNaN(score)) {
+      alert("Please fill Agent, Company, and Score.");
+      return;
+    }
+    if (nps < -100 || nps > 100) {
+      alert("NPS must be between -100 and 100.");
+      return;
+    }
+
+    const feedback = { agent, company, department, score, nps, comment, time: Date.now() };
+
+    // ✅ Check if online
+    if (navigator.onLine) {
+      db.ref("feedbacks").push(feedback, (error) => {
+        if (!error) {
+          alert("Feedback sent to Firebase!");
+        }
+      });
+    } else {
+      // ✅ Offline: Save to localStorage
+      let saved = JSON.parse(localStorage.getItem("offlineFeedbacks") || "[]");
+      saved.push(feedback);
+      localStorage.setItem("offlineFeedbacks", JSON.stringify(saved));
+      document.getElementById("offlineBanner").style.display = "block";
+    }
+
+    // Clear form
+    document.getElementById("agent").value = "";
+    document.getElementById("company").value = "";
+    document.getElementById("department").value = "";
+    document.getElementById("score").value = "";
+    document.getElementById("nps").value = "";
+    document.getElementById("comment").value = "";
+  }
+</script>
+
+</body>
+</html>
